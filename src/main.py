@@ -72,13 +72,14 @@ def intersects(rectA: List[List[float]], rectB: List[List[float]]) -> bool:
 
 
 def closest_field_name(doc_image: np.array, general_field_name: str, coords: List[List[float]],
-                       possible_fields: List[str], buffer=5, show=False) -> str:
+                       possible_fields: List[str], search_dist_percentage=0.2, buffer=5, show=False) -> str:
 	"""
 	Map the general field name to the specialized field name based on the closest text block in the document image.
 	:param doc_image: Target document image represented as numpy array.
 	:param general_field_name: A general field name of the detected text block.
 	:param coords: Coordinates of the detected field value [[x_start, y_start], [x_end, y_end]].
 	:param possible_fields: A list of all possible keys defined by the user.
+	:param search_dist_percentage: Offset threshold to search for nearby fields (0.1 = 10 percents of the image).
 	:param buffer: A value denoting the number of pixels for increasing the size of the detected text region for
 	readability.
 	:param show: Boolean parameter indicating whether to show intermediate results or not.
@@ -91,6 +92,7 @@ def closest_field_name(doc_image: np.array, general_field_name: str, coords: Lis
 		return general_field_name
 	
 	field_center_x, field_center_y = center_point(coords)
+	height, width = doc_image.shape[:2]
 	
 	closest_regions = []
 	ocr_config = r'--oem 3 --psm 6'
@@ -102,7 +104,7 @@ def closest_field_name(doc_image: np.array, general_field_name: str, coords: Lis
 		text_center_x, text_center_y = center_point(text_region)
 		dist = np.linalg.norm(np.array([text_center_x, text_center_y]) - np.array([field_center_x, field_center_y]))
 		
-		if not intersects(coords, text_region) and text_center_x <= field_center_x + buffer and text_center_y <= field_center_y + buffer:
+		if not intersects(coords, text_region) and text_center_x <= field_center_x + buffer and text_center_y <= field_center_y + buffer and dist < search_dist_percentage * max(height, width):
 			image_region = doc_image[text_region[0][1]-buffer:text_region[1][1]+buffer, text_region[0][0]-buffer:text_region[1][0]+buffer]
 			image_region = convert_to_grayscale(image_region)
 			image_region = thresholding(image_region)
