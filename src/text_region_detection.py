@@ -1,17 +1,17 @@
 from typing import List
 
 import cv2
+import numpy as np
 import pytesseract
 
 
-def locate_text_regions(image_path: str, show=False) -> List[List[List[float]]]:
+def locate_text_regions(image: np.array, show=False) -> List[List[List[float]]]:
 	"""
 	Find all text regions in the image.
-	:param image_path: Path to the document image.
+	:param image: The document image represented as numpy array.
 	:param show: Parameter indicating whether to show the detection results or not.
 	:return: A list of all detected text regions represented as [[x_start, y_start], [x_end, y_end]].
 	"""
-	image = cv2.imread(image_path)
 	boxes = pytesseract.image_to_data(image)
 	boxes = boxes.split('\n')[1:]
 	regions = []
