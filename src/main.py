@@ -1,11 +1,8 @@
 from typing import List
-
-import cv2
+from PIL import Image
 import numpy as np
 import pytesseract
-
 from src.text_region_detection import locate_text_regions
-
 
 def center_point(coords: List[List[float]]) -> List[float]:
 	"""
@@ -22,7 +19,7 @@ def convert_to_grayscale(image: np.ndarray) -> np.ndarray:
 	:param image: Input image.
 	:return: Grayscale image.
 	"""
-	return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+	return np.array(Image.fromarray(image).convert('L'))
 
 
 def thresholding(image: np.ndarray) -> np.ndarray:
@@ -31,7 +28,36 @@ def thresholding(image: np.ndarray) -> np.ndarray:
 	:param image: Input image.
 	:return: Image with the binary and OTSU thresholding applied on it.
 	"""
-	return cv2.threshold(image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+	return binarize_by_otsu(image)
+
+
+def binarize_by_thresholding(img: np.ndarray, threshold: float) -> np.ndarray:
+    """Returns a binary version of the image by applying a thresholding operation."""
+    return ((img >= threshold)*255).astype('uint8')
+
+
+def binarize_by_otsu(img: np.ndarray) -> np.ndarray:
+    """Returns a binary version of the image by applying a thresholding operation."""
+    otsu_threshold = 0
+    lowest_criteria = np.inf
+    for threshold in range(255):
+        thresholded_im = img >= threshold
+        # compute weights
+        weight1 = np.sum(thresholded_im) / img.size
+        weight0 = 1 - weight1
+
+        # if one the classes is empty, that threshold will not be considered
+        if weight1 != 0 and weight0 != 0:
+            # compute criteria, based on variance of these classes
+            var0 = np.var(img[thresholded_im == 0])
+            var1 = np.var(img[thresholded_im == 1])
+            otsu_criteria = weight0 * var0 + weight1 * var1
+
+            if otsu_criteria < lowest_criteria:
+                otsu_threshold = threshold
+                lowest_criteria = otsu_criteria
+
+    return binarize_by_thresholding(img, otsu_threshold)
 
 
 def longest_common_substring(S: str, T: str) -> str:
@@ -54,7 +80,7 @@ def longest_common_substring(S: str, T: str) -> str:
 				if counter[i][j] > longest:
 					longest = counter[i][j]
 					end_index = i
-				
+
 	return S[end_index-longest:end_index]
 
 
@@ -67,12 +93,11 @@ def intersects(rectA: List[List[float]], rectB: List[List[float]]) -> bool:
 	"""
 	if max(rectA[0][0], rectB[0][0]) > min(rectA[1][0], rectB[1][0]) or max(rectA[0][1], rectB[0][1]) > min(rectA[1][1], rectB[1][1]):
 		return False
-	
 	return True
 
 
 def closest_field_name(doc_image: np.array, general_field_name: str, coords: List[List[float]],
-                       possible_fields: List[str], search_dist_percentage=0.2, buffer=5, show=False) -> str:
+                       possible_fields: List[str], search_dist_percentage=0.2, buffer=5) -> str:
 	"""
 	Map the general field name to the specialized field name based on the closest text block in the document image.
 	:param doc_image: Target document image represented as numpy array.
@@ -85,81 +110,37 @@ def closest_field_name(doc_image: np.array, general_field_name: str, coords: Lis
 	:param show: Boolean parameter indicating whether to show intermediate results or not.
 	:return: Closest field name from the list of possible fields.
 	"""
-	text_regions = locate_text_regions(doc_image, show=show)
-	
+	text_regions = locate_text_regions(doc_image)
+
 	if len(text_regions) == 0:
 		print("[INFO] No text regions were detected.")
 		return general_field_name
-	
+
 	field_center_x, field_center_y = center_point(coords)
 	height, width = doc_image.shape[:2]
-	
+
 	closest_regions = []
 	ocr_config = r'--oem 3 --psm 6'
-	
-	if show:
-		doc_image = cv2.rectangle(doc_image, coords[0], coords[1], (0, 0, 255), 2)
 
 	for text_region in text_regions:
 		text_center_x, text_center_y = center_point(text_region)
 		dist = np.linalg.norm(np.array([text_center_x, text_center_y]) - np.array([field_center_x, field_center_y]))
-		
+
 		if not intersects(coords, text_region) and text_center_x <= field_center_x + buffer and text_center_y <= field_center_y + buffer and dist < search_dist_percentage * max(height, width):
 			image_region = doc_image[text_region[0][1]-buffer:text_region[1][1]+buffer, text_region[0][0]-buffer:text_region[1][0]+buffer]
 			image_region = convert_to_grayscale(image_region)
 			image_region = thresholding(image_region)
-			
 			field_term = pytesseract.image_to_string(image_region, config=ocr_config).replace("\n\x0c", '')
-			
 			closest_regions.append({"distance": dist, "field_term": field_term, "region": text_region})
-			
-			if show:
-				doc_image = cv2.rectangle(doc_image, text_region[0], text_region[1], (255, 0, 0), 2)
-			
+
 	closest_regions = sorted(closest_regions, key=lambda x: x["distance"])
 	longest_substring = ''
-	result = ''
-	
+	result = general_field_name
+
 	for region in closest_regions:
 		for field_name in possible_fields:
 			substring = longest_common_substring(field_name.strip().lower(), region["field_term"].strip().lower())
-			
 			if len(substring) > len(longest_substring):
 				longest_substring = substring
 				result = field_name
-	
-	if show:
-		cv2.imshow("Closest regions", doc_image)
-		cv2.waitKey(0)
-		cv2.destroyAllWindows()
-				
-	print("Closest field:", result)
 	return result
-		
-	
-if __name__ == "__main__":
-	# doc_image_path = "data/image1.png"
-	# doc_image = cv2.imread(doc_image_path)
-	# closest_field_name(doc_image, "Date", [[1390, 578], [1526, 598]], [
-	# 	"Tax",
-	# 	"Address"
-	# 	"Name",
-	# 	"Surname",
-	# 	"Invoice Date",
-	# 	"Due Date",
-	# 	"Billing Date",
-	# 	"Shipping Date"
-	# ], show=True)
-	
-	doc_image_path = "data/image2.png"
-	doc_image = cv2.imread(doc_image_path)
-	closest_field_name(doc_image, "Address", [[440, 635], [705, 750]], [
-		"Tax",
-		"Address"
-		"Name",
-		"Surname",
-		"Home Address",
-		"Business Address",
-		"Billing Address",
-		"Shipping Address"
-	], show=True)
