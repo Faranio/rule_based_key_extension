@@ -1,6 +1,8 @@
 from typing import List
+
 import numpy as np
 import pytesseract
+
 
 def locate_text_regions(image: np.array) -> List[List[List[float]]]:
 	"""
@@ -11,10 +13,12 @@ def locate_text_regions(image: np.array) -> List[List[List[float]]]:
 	boxes = pytesseract.image_to_data(image)
 	boxes = boxes.split('\n')[1:]
 	regions = []
+	
 	for row in boxes:
 		row = row.split('\t')
 		if len(row[-1].strip()) == 0:
 			continue
 		x, y, w, h = list(map(int, row[6:10]))
 		regions.append([[x, y], [x+w, y+h]])
+		
 	return regions
