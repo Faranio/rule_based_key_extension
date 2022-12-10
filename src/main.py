@@ -72,14 +72,13 @@ def intersects(rectA: List[List[float]], rectB: List[List[float]]) -> bool:
 
 
 def closest_field_name(doc_image: np.array, general_field_name: str, coords: List[List[float]],
-                       possible_fields: List[str], search_dist_percentage=0.2, buffer=5, show=False) -> str:
+                       possible_fields: List[str], buffer=5, show=False) -> str:
 	"""
 	Map the general field name to the specialized field name based on the closest text block in the document image.
 	:param doc_image: Target document image represented as numpy array.
 	:param general_field_name: A general field name of the detected text block.
 	:param coords: Coordinates of the detected field value [[x_start, y_start], [x_end, y_end]].
 	:param possible_fields: A list of all possible keys defined by the user.
-	:param search_dist_percentage: Offset threshold to search for nearby fields (0.1 = 10 percents of the image).
 	:param buffer: A value denoting the number of pixels for increasing the size of the detected text region for
 	readability.
 	:param show: Boolean parameter indicating whether to show intermediate results or not.
@@ -91,21 +90,25 @@ def closest_field_name(doc_image: np.array, general_field_name: str, coords: Lis
 		print("[INFO] No text regions were detected.")
 		return general_field_name
 	
+	(field_x_start, field_y_start), (field_x_end, field_y_end) = coords
 	field_center_x, field_center_y = center_point(coords)
-	height, width = doc_image.shape[:2]
 	
 	closest_regions = []
 	ocr_config = r'--oem 3 --psm 6'
 	
 	if show:
-		doc_image = cv2.rectangle(doc_image, coords[0], coords[1], (0, 0, 255), 2)
+		doc_image = cv2.rectangle(doc_image, (field_x_start, field_y_start), (field_x_end, field_y_end), (0, 0, 255), 2)
 
 	for text_region in text_regions:
+		(x_start, y_start), (x_end, y_end) = text_region
 		text_center_x, text_center_y = center_point(text_region)
 		dist = np.linalg.norm(np.array([text_center_x, text_center_y]) - np.array([field_center_x, field_center_y]))
 		
-		if not intersects(coords, text_region) and text_center_x <= field_center_x + buffer and text_center_y <= field_center_y + buffer and dist < search_dist_percentage * max(height, width):
-			image_region = doc_image[text_region[0][1]-buffer:text_region[1][1]+buffer, text_region[0][0]-buffer:text_region[1][0]+buffer]
+		if not intersects(coords, text_region) and \
+				(field_x_start <= x_end and field_x_end >= x_start and field_center_y >= text_center_y
+				 or
+				 field_y_start <= y_end and field_y_end >= y_start and field_center_x >= text_center_x):
+			image_region = doc_image[y_start-buffer:y_end+buffer, x_start-buffer:x_end+buffer]
 			image_region = convert_to_grayscale(image_region)
 			image_region = thresholding(image_region)
 			
@@ -114,7 +117,7 @@ def closest_field_name(doc_image: np.array, general_field_name: str, coords: Lis
 			closest_regions.append({"distance": dist, "field_term": field_term, "region": text_region})
 			
 			if show:
-				doc_image = cv2.rectangle(doc_image, text_region[0], text_region[1], (255, 0, 0), 2)
+				doc_image = cv2.rectangle(doc_image, (x_start, y_start), (x_end, y_end), (255, 0, 0), 2)
 			
 	closest_regions = sorted(closest_regions, key=lambda x: x["distance"])
 	longest_substring = ''
@@ -138,24 +141,23 @@ def closest_field_name(doc_image: np.array, general_field_name: str, coords: Lis
 		
 	
 if __name__ == "__main__":
-	# doc_image_path = "data/image1.png"
-	# doc_image = cv2.imread(doc_image_path)
-	# closest_field_name(doc_image, "Date", [[1390, 578], [1526, 598]], [
-	# 	"Tax",
-	# 	"Address"
-	# 	"Name",
-	# 	"Surname",
-	# 	"Invoice Date",
-	# 	"Due Date",
-	# 	"Billing Date",
-	# 	"Shipping Date"
-	# ], show=True)
+	doc_image_path = "data/image1.png"
+	doc_image = cv2.imread(doc_image_path)
+	closest_field_name(doc_image, "Date", [[1390, 578], [1526, 598]], [
+		"Tax",
+		"Address"
+		"Name",
+		"Surname",
+		"Invoice Date",
+		"Due Date",
+		"Billing Date",
+		"Shipping Date"
+	], show=True)
 	
 	doc_image_path = "data/image2.png"
 	doc_image = cv2.imread(doc_image_path)
 	closest_field_name(doc_image, "Address", [[440, 635], [705, 750]], [
 		"Tax",
-		"Address"
 		"Name",
 		"Surname",
 		"Home Address",

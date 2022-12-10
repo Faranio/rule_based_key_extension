@@ -25,7 +25,9 @@ def locate_text_regions(image: np.array, show=False) -> List[List[List[float]]]:
 		
 		x, y, w, h = list(map(int, row[6:10]))
 		regions.append([[x, y], [x+w, y+h]])
-		cv2.rectangle(show_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+		
+		if show:
+			cv2.rectangle(show_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
 		
 	if show:
 		cv2.imshow("Text regions", show_image)
